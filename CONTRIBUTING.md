@@ -142,6 +142,18 @@ What to verify in the UI for cross-branch functionality:
 2. `TASK-900` appears from `feature/cross-branch-demo` and is read-only.
 3. `TASK-1` on `main` remains editable.
 
+## Dependency Updates
+
+### GitHub Actions
+
+GitHub Actions are updated using [actions-up](https://github.com/actions-up/actions-up) so we can enforce a cooldown period and lock to deterministic versions, which we wrap in our project's `update:actions`:
+
+```bash
+bun run update:actions
+```
+
+Security updates from Dependabot are an exception — those PRs come in automatically.
+
 ## Releases
 
 When a GitHub release is created, the [release workflow](.github/workflows/release.yml) automatically builds, tests, packages a `.vsix`, and publishes it to both the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ysamlan.vscode-backlog-md) and [Open VSX](https://open-vsx.org/extension/ysamlan/vscode-backlog-md). The `.vsix` is also attached to the GitHub release as a download.

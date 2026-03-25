@@ -184,6 +184,7 @@
     "typecheck": "tsc --noEmit",
     "package": "vsce package --no-dependencies",
     "licenses:generate": "bash scripts/generate-licenses.sh",
+    "update:actions": "bunx actions-up@v1.12.0 --min-age 7",
     "screenshots": "bash scripts/screenshots/run.sh",
     "screenshots:validate": "bun scripts/screenshots/validate.ts",
     "prepare": "husky"
