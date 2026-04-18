@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as yaml from 'js-yaml';
+import matter from 'gray-matter';
 import { Milestone, Task, TaskStatus } from './types';
 import { BacklogParser } from './BacklogParser';
 
@@ -148,9 +149,7 @@ export class BacklogWriter {
    */
   async deleteMilestone(milestoneId: string, parser: BacklogParser): Promise<void> {
     const milestones = await parser.getMilestones();
-    const milestone = milestones.find(
-      (m) => m.id.toLowerCase() === milestoneId.toLowerCase()
-    );
+    const milestone = milestones.find((m) => m.id.toLowerCase() === milestoneId.toLowerCase());
     if (!milestone) {
       throw new Error(`Milestone ${milestoneId} not found`);
     }
@@ -171,9 +170,7 @@ export class BacklogWriter {
    */
   async archiveMilestone(milestoneId: string, parser: BacklogParser): Promise<void> {
     const milestones = await parser.getMilestones();
-    const milestone = milestones.find(
-      (m) => m.id.toLowerCase() === milestoneId.toLowerCase()
-    );
+    const milestone = milestones.find((m) => m.id.toLowerCase() === milestoneId.toLowerCase());
     if (!milestone) {
       throw new Error(`Milestone ${milestoneId} not found`);
     }
@@ -205,9 +202,7 @@ export class BacklogWriter {
     parser: BacklogParser
   ): Promise<void> {
     const milestones = await parser.getMilestones();
-    const milestone = milestones.find(
-      (m) => m.id.toLowerCase() === milestoneId.toLowerCase()
-    );
+    const milestone = milestones.find((m) => m.id.toLowerCase() === milestoneId.toLowerCase());
     if (!milestone) {
       throw new Error(`Milestone ${milestoneId} not found`);
     }
@@ -229,10 +224,7 @@ export class BacklogWriter {
 
     const oldName = milestone.name;
     frontmatter.title = newName.trim();
-    const updatedContent = restoreLineEndings(
-      this.reconstructFile(frontmatter, body),
-      hasCRLF
-    );
+    const updatedContent = restoreLineEndings(this.reconstructFile(frontmatter, body), hasCRLF);
 
     // Rename the milestone file
     const safeTitle = this.sanitizeMilestoneTitle(newName.trim());
@@ -248,8 +240,7 @@ export class BacklogWriter {
     for (const task of tasks) {
       if (
         task.milestone &&
-        (task.milestone === oldName ||
-          task.milestone.toLowerCase() === milestone.id.toLowerCase())
+        (task.milestone === oldName || task.milestone.toLowerCase() === milestone.id.toLowerCase())
       ) {
         await this.updateTask(task.id, { milestone: milestone.id }, parser);
       }
@@ -267,9 +258,7 @@ export class BacklogWriter {
     parser: BacklogParser
   ): Promise<void> {
     const milestones = await parser.getMilestones();
-    const milestone = milestones.find(
-      (m) => m.id.toLowerCase() === milestoneId.toLowerCase()
-    );
+    const milestone = milestones.find((m) => m.id.toLowerCase() === milestoneId.toLowerCase());
     if (!milestone) {
       throw new Error(`Milestone ${milestoneId} not found`);
     }
@@ -1257,85 +1246,97 @@ export class BacklogWriter {
   }
 
   /**
-   * Reconstruct file from frontmatter and body
-   * Outputs frontmatter in a format compatible with upstream Backlog.md:
-   * - Dates as YYYY-MM-DD strings
-   * - Arrays in inline format [item1, item2]
+   * Canonical field order matching upstream Backlog.md serializeTask.
+   * Document-/decision-specific fields (`date`, `type`, `tags`) are appended so
+   * those entities keep a stable order too.
+   */
+  private static readonly FRONTMATTER_FIELD_ORDER: readonly string[] = [
+    'id',
+    'title',
+    'type',
+    'status',
+    'assignee',
+    'reporter',
+    'date',
+    'created_date',
+    'updated_date',
+    'labels',
+    'milestone',
+    'dependencies',
+    'references',
+    'documentation',
+    'parent_task_id',
+    'subtasks',
+    'priority',
+    'ordinal',
+    'onStatusChange',
+    'tags',
+  ];
+
+  /** Fields whose empty-array/empty-string value should be omitted entirely. */
+  private static readonly FRONTMATTER_OMIT_IF_EMPTY: ReadonlySet<string> = new Set([
+    'reporter',
+    'updated_date',
+    'milestone',
+    'references',
+    'documentation',
+    'parent_task_id',
+    'subtasks',
+    'priority',
+    'ordinal',
+    'onStatusChange',
+    'tags',
+  ]);
+
+  /**
+   * Reconstruct file from frontmatter and body using gray-matter to match
+   * upstream Backlog.md byte-for-byte: single-quoted strings (only when needed),
+   * block-style arrays, and consistently quoted dates.
    */
   private reconstructFile(frontmatter: FrontmatterData, body: string): string {
-    // Build YAML manually to match upstream Backlog.md format
-    const lines: string[] = [];
+    const ordered = this.orderFrontmatter(frontmatter);
+    // Strip leading newlines — upstream trims rawContent on parse so
+    // matter.stringify controls exactly one newline before the body. Without
+    // this, any pre-existing blank line would compound with the post-process
+    // regex to produce a double blank line.
+    const trimmedBody = body.replace(/^\n+/, '');
+    const serialized = matter.stringify(trimmedBody, ordered);
+    // Ensure blank line between frontmatter and body (mirrors upstream).
+    return serialized.replace(/^(---\n(?:.*\n)*?---)\n(?!$)/, '$1\n\n');
+  }
 
-    // Define field order to match upstream convention
-    const fieldOrder = [
-      'id',
-      'title',
-      'status',
-      'priority',
-      'milestone',
-      'labels',
-      'assignee',
-      'reporter',
-      'created',
-      'created_date',
-      'updated_date',
-      'dependencies',
-      'references',
-      'documentation',
-      'parent_task_id',
-      'subtasks',
-      'ordinal',
-      'type',
-      'onStatusChange',
-    ];
+  /**
+   * Rebuild the frontmatter object in canonical field order and drop optional
+   * empty values so the serializer emits fields in the same order as upstream.
+   */
+  private orderFrontmatter(frontmatter: FrontmatterData): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    const order = BacklogWriter.FRONTMATTER_FIELD_ORDER;
+    const omitIfEmpty = BacklogWriter.FRONTMATTER_OMIT_IF_EMPTY;
 
-    // First output fields in the defined order
-    for (const key of fieldOrder) {
-      if (key in frontmatter && frontmatter[key] !== undefined) {
-        lines.push(this.formatYamlField(key, frontmatter[key]));
-      }
+    const shouldSkip = (key: string, value: unknown): boolean => {
+      if (value === undefined || value === null) return true;
+      if (!omitIfEmpty.has(key)) return false;
+      if (typeof value === 'string' && value.trim() === '') return true;
+      if (Array.isArray(value) && value.length === 0) return true;
+      return false;
+    };
+
+    for (const key of order) {
+      if (!(key in frontmatter)) continue;
+      const value = frontmatter[key];
+      if (shouldSkip(key, value)) continue;
+      result[key] = value;
     }
-
-    // Then output any remaining fields not in the order list
     for (const key of Object.keys(frontmatter)) {
-      if (!fieldOrder.includes(key) && frontmatter[key] !== undefined) {
-        lines.push(this.formatYamlField(key, frontmatter[key]));
-      }
+      if (order.includes(key)) continue;
+      const value = frontmatter[key];
+      if (shouldSkip(key, value)) continue;
+      result[key] = value;
     }
-
-    const yamlContent = lines.join('\n') + '\n';
-    return `---\n${yamlContent}---\n${body}`;
+    return result;
   }
 
-  /**
-   * Format a single YAML field in upstream-compatible format
-   */
-  private formatYamlField(key: string, value: unknown): string {
-    if (value === null || value === undefined) {
-      return `${key}: `;
-    }
-
-    if (Array.isArray(value)) {
-      // Use inline array format [item1, item2] like upstream
-      if (value.length === 0) {
-        return `${key}: []`;
-      }
-      const items = value.map((item) => this.formatYamlValue(item)).join(', ');
-      return `${key}: [${items}]`;
-    }
-
-    if (typeof value === 'object') {
-      // For objects, use yaml.dump but inline
-      const dumped = yaml.dump(value, { flowLevel: 0 }).trim();
-      return `${key}: ${dumped}`;
-    }
-
-    return `${key}: ${this.formatYamlValue(value)}`;
-  }
-
-  /**
-   * Format a YAML value, quoting strings if necessary
-   */
   /**
    * Get the next available document ID number
    */
@@ -1559,10 +1560,7 @@ export class BacklogWriter {
 
     for (const [sectionName, sectionContent] of Object.entries(sections)) {
       if (sectionContent === undefined) continue;
-      const sectionRegex = new RegExp(
-        `(## ${sectionName}\\n\\n)[\\s\\S]*?(?=\\n## |$)`,
-        'g'
-      );
+      const sectionRegex = new RegExp(`(## ${sectionName}\\n\\n)[\\s\\S]*?(?=\\n## |$)`, 'g');
       if (sectionRegex.test(updatedBody)) {
         updatedBody = updatedBody.replace(
           new RegExp(`(## ${sectionName}\\n\\n)[\\s\\S]*?(?=\\n## |$)`),
@@ -1589,43 +1587,5 @@ export class BacklogWriter {
       throw new Error(`Decision ${decisionId} not found`);
     }
     fs.unlinkSync(dec.filePath);
-  }
-
-  private formatYamlValue(value: unknown): string {
-    if (typeof value === 'string') {
-      // Quote if contains special characters or looks like other YAML types
-      if (
-        value.includes(':') ||
-        value.includes('#') ||
-        value.includes('[') ||
-        value.includes(']') ||
-        value.includes('{') ||
-        value.includes('}') ||
-        value.includes(',') ||
-        value.includes("'") ||
-        value.includes('"') ||
-        value.includes('\n') ||
-        value.startsWith('@') ||
-        value.startsWith('*') ||
-        value.startsWith('&') ||
-        value.startsWith('!') ||
-        value === 'true' ||
-        value === 'false' ||
-        value === 'null' ||
-        value === 'yes' ||
-        value === 'no' ||
-        value === ''
-      ) {
-        // Use double quotes and escape internal quotes
-        return `"${value.replace(/"/g, '\\"')}"`;
-      }
-      return value;
-    }
-
-    if (typeof value === 'number' || typeof value === 'boolean') {
-      return String(value);
-    }
-
-    return String(value);
   }
 }
