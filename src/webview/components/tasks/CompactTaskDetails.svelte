@@ -26,6 +26,7 @@
     onOpenRelatedTask: (taskId: string) => void;
     onUpdateStatus: (task: TaskWithBlocks, status: string) => void;
     onUpdatePriority: (task: TaskWithBlocks, priority: TaskPriority | undefined) => void;
+    onOpenWorkspaceFile: (relativePath: string, fragment: string | null) => void;
   }
 
   let {
@@ -41,7 +42,20 @@
     onOpenRelatedTask,
     onUpdateStatus,
     onUpdatePriority,
+    onOpenWorkspaceFile,
   }: Props = $props();
+
+  function handleMarkdownClick(event: MouseEvent) {
+    const target = event.target as HTMLElement | null;
+    const link = target?.closest?.('a') as HTMLAnchorElement | null;
+    if (!link) return;
+    const href = link.getAttribute('href');
+    if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const [relativePath, fragment] = href.split('#');
+    onOpenWorkspaceFile(relativePath, fragment ?? null);
+  }
 
   let isReadOnly = $derived(task ? isReadOnlyTask(task) : false);
   let readOnlyContext = $derived(task ? getReadOnlyTaskContext(task) : '');
@@ -209,6 +223,8 @@
     <div class="compact-description-heading">Description</div>
     <div
       class="compact-description markdown-content"
+      onclick={handleMarkdownClick}
+      role="presentation"
       use:renderMermaidAction={descriptionHtml}
     >
       {#if descriptionHtml}
@@ -223,6 +239,8 @@
       <div
         class="compact-description markdown-content"
         data-testid="compact-plan"
+        onclick={handleMarkdownClick}
+        role="presentation"
         use:renderMermaidAction={planHtml}
       >
         {@html planHtml}
@@ -234,6 +252,8 @@
       <div
         class="compact-description markdown-content"
         data-testid="compact-notes"
+        onclick={handleMarkdownClick}
+        role="presentation"
         use:renderMermaidAction={notesHtml}
       >
         {@html notesHtml}
@@ -245,6 +265,8 @@
       <div
         class="compact-description markdown-content"
         data-testid="compact-final-summary"
+        onclick={handleMarkdownClick}
+        role="presentation"
         use:renderMermaidAction={finalSummaryHtml}
       >
         {@html finalSummaryHtml}

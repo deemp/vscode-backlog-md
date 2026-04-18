@@ -155,6 +155,14 @@ export enum ProgressLocation {
   Notification = 15,
 }
 
+// TextEditorRevealType enum
+export enum TextEditorRevealType {
+  Default = 0,
+  InCenter = 1,
+  InCenterIfOutsideViewport = 2,
+  AtTop = 3,
+}
+
 // EventEmitter class mock
 export class EventEmitter<T> {
   private listeners: ((e: T) => void)[] = [];
