@@ -29,6 +29,7 @@ The VSCode extension's frontmatter serializer produces YAML that diverges from c
 | Array formatting | block-style (`-` lines) | flow-style (`[a, b]`) |
 | `created_date`   | quoted                  | quoted                |
 | `updated_date`   | quoted (when present)   | unquoted              |
+| Date value       | `YYYY-MM-DD HH:MM` (UTC)| `YYYY-MM-DD`          |
 
 **Policy change:** TASK-115.3 previously documented quote style and array format as intentional divergence. That decision is reversed — backlog.md CLI is canonical and the extension must match its serialization byte-for-byte where practical.
 
@@ -42,6 +43,7 @@ The VSCode extension's frontmatter serializer produces YAML that diverges from c
 - [x] #3 Writer quotes date fields consistently with CLI (including updated_date)
 - [x] #4 Round-trip test reads a CLI-produced task file, writes it, and asserts zero diff
 - [x] #5 TASK-115.3's 'intentional divergence' notes on format are updated or superseded
+- [x] #6 `created_date` / `updated_date` values emitted as `YYYY-MM-DD HH:MM` (UTC) to match CLI precision
 <!-- AC:END -->
 
 ## Implementation Plan
