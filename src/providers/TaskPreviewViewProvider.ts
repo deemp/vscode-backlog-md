@@ -11,6 +11,7 @@ import {
 import { BacklogWriter } from '../core/BacklogWriter';
 import { computeSubtasks } from '../core/BacklogParser';
 import { sanitizeMarkdownSource } from '../core/sanitizeMarkdown';
+import { openWorkspaceFile } from '../core/openWorkspaceFile';
 
 // Dynamic import for marked (ESM module)
 let markedParse: ((markdown: string) => string | Promise<string>) | null = null;
@@ -162,6 +163,9 @@ export class TaskPreviewViewProvider extends BaseViewProvider {
           source: message.source,
           branch: message.branch,
         });
+        return;
+      case 'openWorkspaceFile':
+        await openWorkspaceFile(message.relativePath, message.fragment);
         return;
       case 'updateTask': {
         const task = await this.parser.getTask(message.taskId);

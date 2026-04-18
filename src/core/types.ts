@@ -216,6 +216,7 @@ export type WebviewMessage =
   | { type: 'createTask'; task: Partial<Task> }
   | { type: 'archiveTask'; taskId: string }
   | { type: 'openFile'; filePath: string }
+  | { type: 'openWorkspaceFile'; relativePath: string; fragment: string | null }
   | { type: 'reorderTask'; taskId: string; ordinal: number }
   | { type: 'reorderTasks'; updates: Array<{ taskId: string; ordinal: number }> }
   | {

@@ -5,7 +5,8 @@ import { openWorkspaceFile } from '../../core/openWorkspaceFile';
 import { resetAllMocks } from '../mocks/vscode';
 
 // `showTextDocument` is not on the shared mock — install it once for this suite.
-const showTextDocument = vi.fn();
+const revealRange = vi.fn();
+const showTextDocument: Mock = vi.fn(() => Promise.resolve({ revealRange }));
 (vscode.window as unknown as { showTextDocument: Mock }).showTextDocument = showTextDocument;
 
 // The vscode mock has a mutable workspaceFolders, but TS types it as readonly.
@@ -25,6 +26,8 @@ describe('openWorkspaceFile', () => {
   beforeEach(() => {
     resetAllMocks();
     showTextDocument.mockReset();
+    showTextDocument.mockImplementation(() => Promise.resolve({ revealRange }));
+    revealRange.mockReset();
     mockWorkspace.workspaceFolders = undefined;
   });
 
@@ -83,9 +86,72 @@ describe('openWorkspaceFile', () => {
     expect(optionsArg.selection.end).toMatchObject({ line: 19, character: 0 });
   });
 
-  it('falls back to vscode.open when fragment is not a line range', async () => {
+  it('reveals the range so an already-open editor scrolls to the new anchor', async () => {
     setWorkspaceFolders(['/repo']);
     (vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 1 });
+
+    await openWorkspaceFile('src/file.ts', 'L42');
+
+    expect(revealRange).toHaveBeenCalledTimes(1);
+    const [rangeArg] = revealRange.mock.calls[0];
+    expect(rangeArg.start).toMatchObject({ line: 41, character: 0 });
+  });
+
+  it('jumps to a markdown heading when the slug matches', async () => {
+    setWorkspaceFolders(['/repo']);
+    (vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 1 });
+    const doc = [
+      '# Intro',
+      '',
+      'Some text.',
+      '',
+      '## S.B. Adjustment Rationale',
+      '',
+      'Details.',
+      '',
+    ].join('\n');
+    (vscode.workspace.fs.readFile as Mock).mockResolvedValueOnce(new TextEncoder().encode(doc));
+
+    await openWorkspaceFile('docs/guide.md', 'sb-adjustment-rationale');
+
+    expect(showTextDocument).toHaveBeenCalledTimes(1);
+    const [, optionsArg] = showTextDocument.mock.calls[0];
+    expect(optionsArg.selection.start).toMatchObject({ line: 4, character: 0 });
+    expect(revealRange).toHaveBeenCalledTimes(1);
+  });
+
+  it('disambiguates duplicate heading slugs with a -1/-2 counter', async () => {
+    setWorkspaceFolders(['/repo']);
+    (vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 1 });
+    const doc = ['## Notes', 'first', '', '## Notes', 'second', '', '## Notes', 'third', ''].join(
+      '\n'
+    );
+    (vscode.workspace.fs.readFile as Mock).mockResolvedValueOnce(new TextEncoder().encode(doc));
+
+    await openWorkspaceFile('docs/guide.md', 'notes-1');
+
+    const [, optionsArg] = showTextDocument.mock.calls[0];
+    expect(optionsArg.selection.start).toMatchObject({ line: 3, character: 0 });
+  });
+
+  it('ignores headings inside fenced code blocks', async () => {
+    setWorkspaceFolders(['/repo']);
+    (vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 1 });
+    const doc = ['```', '# Target', '```', '', '## Target', ''].join('\n');
+    (vscode.workspace.fs.readFile as Mock).mockResolvedValueOnce(new TextEncoder().encode(doc));
+
+    await openWorkspaceFile('docs/guide.md', 'target');
+
+    const [, optionsArg] = showTextDocument.mock.calls[0];
+    expect(optionsArg.selection.start).toMatchObject({ line: 4, character: 0 });
+  });
+
+  it('falls back to vscode.open when the heading slug is not found', async () => {
+    setWorkspaceFolders(['/repo']);
+    (vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 1 });
+    (vscode.workspace.fs.readFile as Mock).mockResolvedValueOnce(
+      new TextEncoder().encode('# Only heading\n')
+    );
 
     await openWorkspaceFile('docs/guide.md', 'section-heading');
 
@@ -93,6 +159,19 @@ describe('openWorkspaceFile', () => {
       'vscode.open',
       expect.objectContaining({ fsPath: '/repo/docs/guide.md' })
     );
+  });
+
+  it('falls back to vscode.open for non-markdown files with non-line fragments', async () => {
+    setWorkspaceFolders(['/repo']);
+    (vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 1 });
+
+    await openWorkspaceFile('src/file.ts', 'some-anchor');
+
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'vscode.open',
+      expect.objectContaining({ fsPath: '/repo/src/file.ts' })
+    );
+    expect(vscode.workspace.fs.readFile).not.toHaveBeenCalled();
   });
 
   it('tries each workspace folder until the file is found', async () => {
