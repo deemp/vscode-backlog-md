@@ -42,5 +42,5 @@ function parseLineRange(fragment: string | null): vscode.Range | undefined {
   if (!match) return undefined;
   const start = Math.max(0, parseInt(match[1], 10) - 1);
   const end = match[2] ? Math.max(start, parseInt(match[2], 10) - 1) : start;
-  return new vscode.Range(start, 0, end, 0);
+  return new vscode.Range(new vscode.Position(start, 0), new vscode.Position(end, 0));
 }
