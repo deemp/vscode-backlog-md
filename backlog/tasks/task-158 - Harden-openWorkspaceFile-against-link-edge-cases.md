@@ -1,10 +1,10 @@
 ---
 id: TASK-158
 title: Harden openWorkspaceFile against link edge cases
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-04-20 12:00'
-updated_date: '2026-04-20 12:00'
+updated_date: '2026-04-20 14:45'
 labels: []
 dependencies:
   - TASK-153
@@ -44,11 +44,11 @@ Non-goals: changing the message contract between webview and extension host; cha
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 URL-encoded paths like `task-041%20-%20foo.md` resolve to the literal filename with spaces
-- [ ] #2 Parent-traversal paths (`../../contributing/report.md`) in a task/document body resolve against the source file's directory before falling back to workspace folders; a source-relative sibling wins over a workspace-root file of the same name
-- [ ] #3 Absolute paths in link hrefs are rejected with a user-visible warning and do not open files outside the workspace
-- [ ] #4 Links authored with backslash separators resolve to the same file as forward-slash equivalents on all platforms
-- [ ] #5 Links that resolve to a directory show a warning instead of silently failing
+- [x] #1 URL-encoded paths like `task-041%20-%20foo.md` resolve to the literal filename with spaces
+- [x] #2 Parent-traversal paths (`../../contributing/report.md`) in a task/document body resolve against the source file's directory before falling back to workspace folders; a source-relative sibling wins over a workspace-root file of the same name
+- [x] #3 Absolute paths in link hrefs are rejected with a user-visible warning and do not open files outside the workspace
+- [x] #4 Links authored with backslash separators resolve to the same file as forward-slash equivalents on all platforms
+- [x] #5 Links that resolve to a directory show a warning instead of silently failing
 - [ ] #6 Setext-style headings are matched by slug fragments the same as ATX headings
 - [ ] #7 `#` lines inside 4-space indented code blocks and HTML comments are not treated as headings
 - [ ] #8 `L0`, reversed ranges, and malformed line fragments behave deterministically and are covered by unit tests
