@@ -52,6 +52,19 @@ After installing, reload any open VS Code windows
 with `code --uninstall-extension ysamlan.vscode-backlog-md` to revert to the
 Marketplace version.
 
+## Visual proof for your PR
+
+If your change affects what users see or how they interact with the
+extension, a short "before/after" or "demo" section in your PR description
+helps reviewers enormously. The repo ships a `visual-proof` Claude Code
+skill at `.claude/skills/visual-proof/` that can capture screenshots of the
+extension via CDP and assemble them into a
+[`showboat`](https://github.com/simonw/showboat) markdown doc; you can
+paste relevant screenshots from that into your PR.
+
+We highly recommend all agents use the `visual-proof` skill flow. Humans
+can also feel free to just use hand-taken screenshots.
+
 ## Project Structure
 
 ```
