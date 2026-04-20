@@ -27,7 +27,9 @@ async function loadSlugger(): Promise<SluggerModule> {
  * a markdown reader would expect). Falls back to each workspace folder.
  *
  * The path is URL-decoded so links written as `task-041%20-%20foo.md` resolve
- * to the literal filename `task-041 - foo.md`.
+ * to the literal filename `task-041 - foo.md`. Backslash separators are
+ * normalized to forward slashes so Windows-authored links work cross-platform.
+ * Absolute paths and directory targets are rejected with a warning.
  */
 export async function openWorkspaceFile(
   relativePath: string | undefined,
@@ -36,7 +38,15 @@ export async function openWorkspaceFile(
 ): Promise<void> {
   if (!relativePath) return;
 
-  const decodedPath = safeDecode(relativePath);
+  const decodedPath = safeDecode(relativePath).replace(/\\/g, '/');
+
+  if (isAbsolutePath(decodedPath)) {
+    vscode.window.showWarningMessage(
+      `Refusing to open absolute path outside workspace: ${decodedPath}`
+    );
+    return;
+  }
+
   const folders = vscode.workspace.workspaceFolders;
 
   const candidates: vscode.Uri[] = [];
@@ -55,9 +65,17 @@ export async function openWorkspaceFile(
   }
 
   for (const uri of candidates) {
+    let stat: vscode.FileStat;
     try {
-      await vscode.workspace.fs.stat(uri);
+      stat = await vscode.workspace.fs.stat(uri);
     } catch {
+      continue;
+    }
+    if (stat.type === vscode.FileType.Directory) {
+      vscode.window.showWarningMessage(`Link target is a directory, not a file: ${decodedPath}`);
+      return;
+    }
+    if ((stat.type & vscode.FileType.File) === 0) {
       continue;
     }
     const range = await resolveRange(uri, decodedPath, fragment);
@@ -71,6 +89,14 @@ export async function openWorkspaceFile(
   }
 
   vscode.window.showWarningMessage(`File not found in workspace: ${decodedPath}`);
+}
+
+function isAbsolutePath(value: string): boolean {
+  // POSIX absolute, including UNC //server/share (backslashes already normalized).
+  if (value.startsWith('/')) return true;
+  // Windows drive letter: C:, C:/foo. Backslashes already normalized to /.
+  if (/^[A-Za-z]:(\/|$)/.test(value)) return true;
+  return false;
 }
 
 function safeDecode(value: string): string {

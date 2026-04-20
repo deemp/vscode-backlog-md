@@ -271,4 +271,56 @@ describe('openWorkspaceFile', () => {
       expect.objectContaining({ fsPath: '/repo/backlog/tasks/task-041.md' })
     );
   });
+
+  it('rejects POSIX absolute paths with a warning instead of opening them', async () => {
+    setWorkspaceFolders(['/repo']);
+
+    await openWorkspaceFile('/etc/passwd', null);
+
+    expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+      'Refusing to open absolute path outside workspace: /etc/passwd'
+    );
+    expect(vscode.workspace.fs.stat).not.toHaveBeenCalled();
+    expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+  });
+
+  it('rejects Windows drive-letter absolute paths with a warning', async () => {
+    setWorkspaceFolders(['/repo']);
+
+    await openWorkspaceFile('C:\\Windows\\System32\\config', null);
+
+    expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+      expect.stringContaining('Refusing to open absolute path')
+    );
+    expect(vscode.workspace.fs.stat).not.toHaveBeenCalled();
+    expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+  });
+
+  it('normalizes backslash separators so Windows-authored links resolve on POSIX', async () => {
+    setWorkspaceFolders(['/repo']);
+    (vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 1 });
+
+    await openWorkspaceFile('docs\\guide.md', null);
+
+    expect(vscode.workspace.fs.stat).toHaveBeenCalledWith(
+      expect.objectContaining({ fsPath: '/repo/docs/guide.md' })
+    );
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'vscode.open',
+      expect.objectContaining({ fsPath: '/repo/docs/guide.md' })
+    );
+  });
+
+  it('warns instead of opening when the link target is a directory', async () => {
+    setWorkspaceFolders(['/repo']);
+    (vscode.workspace.fs.stat as Mock).mockResolvedValueOnce({ type: 2 });
+
+    await openWorkspaceFile('docs', null);
+
+    expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+      'Link target is a directory, not a file: docs'
+    );
+    expect(vscode.commands.executeCommand).not.toHaveBeenCalled();
+    expect(showTextDocument).not.toHaveBeenCalled();
+  });
 });
