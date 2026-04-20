@@ -120,6 +120,14 @@ export const workspace = {
   findFiles: vi.fn(() => Promise.resolve([])),
 };
 
+// FileType flags (mirrors vscode.FileType: Unknown/File/Directory/SymbolicLink)
+export enum FileType {
+  Unknown = 0,
+  File = 1,
+  Directory = 2,
+  SymbolicLink = 64,
+}
+
 // ViewColumn enum
 export enum ViewColumn {
   Active = -1,
