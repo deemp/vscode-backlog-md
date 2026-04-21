@@ -85,6 +85,10 @@
     vscode.postMessage({ type: 'selectTask', taskId });
   }
 
+  function handleOpenWorkspaceFile(relativePath: string, fragment: string | null) {
+    vscode.postMessage({ type: 'openWorkspaceFile', relativePath, fragment });
+  }
+
   onMount(() => {
     vscode.postMessage({ type: 'refresh' });
   });
@@ -103,4 +107,5 @@
   onOpenRelatedTask={handleOpenRelatedTask}
   onUpdateStatus={handleUpdateStatus}
   onUpdatePriority={handleUpdatePriority}
+  onOpenWorkspaceFile={handleOpenWorkspaceFile}
 />
