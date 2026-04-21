@@ -4,21 +4,9 @@ import * as path from 'path';
 import { BacklogParser, computeSubtasks } from '../core/BacklogParser';
 import { BacklogWriter, computeContentHash, FileConflictError } from '../core/BacklogWriter';
 import { isReadOnlyTask, getReadOnlyTaskContext, type Task, type TaskSource } from '../core/types';
-import { sanitizeMarkdownSource } from '../core/sanitizeMarkdown';
 import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
-
-// Dynamic import for marked (ESM module)
-let markedParse: ((markdown: string) => string | Promise<string>) | null = null;
-async function parseMarkdown(markdown: string): Promise<string> {
-  if (!markedParse) {
-    const { marked } = await import('marked');
-    marked.setOptions({ gfm: true, breaks: true });
-    markedParse = marked.parse;
-  }
-  const safe = sanitizeMarkdownSource(markdown);
-  const result = markedParse(safe);
-  return typeof result === 'string' ? result : await result;
-}
+import { openWorkspaceFile, isValidLinkString } from '../core/openWorkspaceFile';
+import { parseMarkdown } from '../core/parseMarkdown';
 
 /**
  * Task detail data structure sent to the webview
@@ -514,6 +502,8 @@ export class TaskDetailProvider {
     field?: string;
     value?: string | string[];
     label?: string;
+    relativePath?: string;
+    fragment?: string | null;
   }): Promise<void> {
     switch (message.type) {
       case 'refresh':
@@ -532,6 +522,17 @@ export class TaskDetailProvider {
           }
         }
         break;
+
+      case 'openWorkspaceFile': {
+        // Shape-check the IPC payload: a compromised or buggy webview could
+        // post a non-string / oversized value. Drop it silently rather than
+        // letting it coerce via `decodeURIComponent` downstream.
+        if (!isValidLinkString(message.relativePath)) break;
+        const fragment = message.fragment ?? null;
+        if (fragment !== null && !isValidLinkString(fragment)) break;
+        await openWorkspaceFile(message.relativePath, fragment, TaskDetailProvider.currentFilePath);
+        break;
+      }
 
       case 'openTask':
         if (message.taskId) {
@@ -607,17 +608,12 @@ export class TaskDetailProvider {
               const taskContent = fs.readFileSync(task.filePath, 'utf-8');
               const taskFm = taskContent.match(/onStatusChange:\s*(.+)/);
               const taskCallback = taskFm?.[1]?.trim().replace(/^['"]|['"]$/g, '');
-              await StatusCallbackRunner.run(
-                backlogPath,
-                taskCallback,
-                config.on_status_change,
-                {
-                  taskId: TaskDetailProvider.currentTaskId,
-                  oldStatus,
-                  newStatus: String(message.value),
-                  taskTitle: task.title,
-                }
-              );
+              await StatusCallbackRunner.run(backlogPath, taskCallback, config.on_status_change, {
+                taskId: TaskDetailProvider.currentTaskId,
+                oldStatus,
+                newStatus: String(message.value),
+                taskTitle: task.title,
+              });
             }
             // Update stored hash after successful write
             const newContent = fs.readFileSync(task.filePath, 'utf-8');

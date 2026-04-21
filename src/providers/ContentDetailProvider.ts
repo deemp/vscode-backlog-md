@@ -1,19 +1,7 @@
 import * as vscode from 'vscode';
 import { BacklogParser } from '../core/BacklogParser';
-import { sanitizeMarkdownSource } from '../core/sanitizeMarkdown';
-
-// Dynamic import for marked (ESM module)
-let markedParse: ((markdown: string) => string | Promise<string>) | null = null;
-async function parseMarkdown(markdown: string): Promise<string> {
-  if (!markedParse) {
-    const { marked } = await import('marked');
-    marked.setOptions({ gfm: true, breaks: true });
-    markedParse = marked.parse;
-  }
-  const safe = sanitizeMarkdownSource(markdown);
-  const result = markedParse(safe);
-  return typeof result === 'string' ? result : await result;
-}
+import { openWorkspaceFile, isValidLinkString } from '../core/openWorkspaceFile';
+import { parseMarkdown } from '../core/parseMarkdown';
 
 /**
  * Provides a webview panel for displaying read-only document and decision details.
@@ -27,6 +15,7 @@ async function parseMarkdown(markdown: string): Promise<string> {
 export class ContentDetailProvider {
   private static currentPanel: vscode.WebviewPanel | undefined;
   private static currentEntityId: string | undefined;
+  private static currentEntityFilePath: string | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -54,6 +43,7 @@ export class ContentDetailProvider {
 
     const panel = this.ensurePanel(`${doc.id}: ${doc.title}`);
     ContentDetailProvider.currentEntityId = docId;
+    ContentDetailProvider.currentEntityFilePath = doc.filePath;
 
     const contentHtml = doc.content ? await parseMarkdown(doc.content) : '';
     panel.webview.postMessage({ type: 'documentData', document: doc, contentHtml });
@@ -76,6 +66,7 @@ export class ContentDetailProvider {
 
     const panel = this.ensurePanel(`${decision.id}: ${decision.title}`);
     ContentDetailProvider.currentEntityId = decisionId;
+    ContentDetailProvider.currentEntityFilePath = decision.filePath;
 
     // Render each section to HTML
     const sections: Record<string, string> = {};
@@ -111,12 +102,22 @@ export class ContentDetailProvider {
     panel.webview.onDidReceiveMessage(async (message) => {
       if (message.type === 'openFile' && message.filePath) {
         vscode.commands.executeCommand('vscode.open', vscode.Uri.file(message.filePath));
+      } else if (message.type === 'openWorkspaceFile') {
+        if (!isValidLinkString(message.relativePath)) return;
+        const fragment = message.fragment ?? null;
+        if (fragment !== null && !isValidLinkString(fragment)) return;
+        await openWorkspaceFile(
+          message.relativePath,
+          fragment,
+          ContentDetailProvider.currentEntityFilePath
+        );
       }
     });
 
     panel.onDidDispose(() => {
       ContentDetailProvider.currentPanel = undefined;
       ContentDetailProvider.currentEntityId = undefined;
+      ContentDetailProvider.currentEntityFilePath = undefined;
     });
 
     return panel;
