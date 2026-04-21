@@ -47,8 +47,23 @@ Areas to address:
 ### Encoding
 
 - Document (and test) that `+` is not decoded as space — `decodeURIComponent` matches browser address-bar semantics, not query-string semantics. Add a test so the behavior is pinned.
+- `findHeadingRange` calls bare `decodeURIComponent(fragment)` on the anchor. A malformed `%` sequence (e.g. `#foo%ZZ`) throws uncaught and bubbles out of the webview handler. Wrap it in the same `safeDecode` helper used on the path, or accept the raw fragment when decoding fails.
 
-Non-goals: changing the message contract between webview and extension host; changing slug library; supporting non-markdown anchors.
+### Anchor-only links
+
+- Links of the form `#heading` with no path component should reveal the matching heading in the *current* file (the source file the link was authored in). Today `openWorkspaceFile` early-returns on empty `relativePath`, so same-file anchor links do nothing. When `relativePath` is empty/missing and `sourceFilePath` is provided with a fragment, resolve the fragment against the source file itself.
+
+### Heading scanner false positives and missed matches
+
+- **YAML frontmatter.** The setext regex `/^ {0,3}-+\s*$/` matches the closing `---` of a YAML frontmatter block, causing the preceding YAML key (e.g. `title: foo`) to be slugged as an H2. Detect and skip a leading `---\n…\n---` block before scanning for headings.
+- **Inline markdown in heading text.** GitHub strips backticks, emphasis markers, and link syntax from heading text before producing the slug (so `## \`foo()\` bar` anchors as `foo-bar`). Today the ATX regex captures raw text including these markers, so any heading containing `` ` ``, `*`, `_`, `~`, or `[text](url)` can slug-mismatch against what a reader clicks. Normalize heading text (strip inline code spans, emphasis runs, and replace links with their display text) before calling `slugger.slug`.
+- **Headings inside blockquotes.** GitHub renders and anchors `> ## Title`; the current `^ {0,3}#` regex rejects it. Strip a leading `>` plus optional space (possibly nested) before applying the ATX/setext match.
+
+### Symlink containment
+
+- `vscode.workspace.fs.stat` follows symlinks, and `isInsideWorkspace` only checks the symlink's own path. A symlink *inside* the workspace pointing to a file *outside* (e.g. `docs/leak.md -> /etc/passwd`) passes every existing check and then opens the external target. Resolve the real path (`fs.realpath` on node fs, or equivalent) of the candidate and re-apply `isInsideWorkspace` against the resolved path before opening. Reject with the same "outside workspace" warning when the realpath escapes.
+
+Non-goals: changing the message contract between webview and extension host; changing slug library; supporting non-markdown anchors; supporting query-string-style `?v=…` segments before the fragment.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -65,4 +80,10 @@ Non-goals: changing the message contract between webview and extension host; cha
 - [x] #10 Links that resolve outside every workspace folder (via `../` traversal) are rejected with a user-visible warning and do not open files outside the workspace
 - [x] #11 The `openWorkspaceFile` message is shape-validated at each provider's webview→host handler — non-string or over-length `relativePath` / `fragment` values are dropped without reaching the resolver
 - [x] #12 Markdown heading resolution is bounded by file size: files above the configured cap fall back to a plain open (no `readFile`) instead of loading the whole document to scan for a slug
+- [ ] #13 Anchor-only links (`#heading` with no path component) reveal the matching heading in the source file the link was authored in
+- [ ] #14 YAML frontmatter at the top of a markdown file is skipped during heading scanning: the closing `---` is not matched as a setext H2, and `#` lines inside frontmatter are not treated as ATX headings
+- [ ] #15 Heading text containing inline markdown (code spans, emphasis markers, or `[text](url)` links) produces the same slug GitHub does — inline markup is stripped before slugging
+- [ ] #16 Headings authored inside a blockquote (`> ## Title`, including nested `> > ## Title`) are matched by their slug the same as top-level headings
+- [ ] #17 A symlink inside the workspace whose realpath resolves outside every workspace folder is rejected with the same "outside workspace" warning as a literal `../` escape
+- [ ] #18 A malformed percent sequence in the fragment (e.g. `#foo%ZZ`) does not throw out of the webview handler — the fragment is either decoded best-effort or treated as a literal string
 <!-- AC:END -->
